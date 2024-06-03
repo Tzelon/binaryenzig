@@ -3,7 +3,7 @@ const std = @import("std");
 // Although this function looks imperative, note that its job is to
 // declaratively construct a build graph that will be executed by an external
 // runner.
-pub fn build(b: *std.Build) void {
+pub fn build(b: *std.Build) !void {
     // Standard target options allows the person running `zig build` to choose
     // what target to build for. Here we do not override the defaults, which
     // means any target is allowed, and the default is native. Other options
@@ -35,6 +35,11 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+
+    exe.addIncludePath(.{ .path = "binaryen/src/" });
+    exe.addLibraryPath(b.path("binaryen/lib/"));
+    exe.linkSystemLibrary("binaryen");
+    exe.linkLibCpp();
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
@@ -88,4 +93,32 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_lib_unit_tests.step);
     test_step.dependOn(&run_exe_unit_tests.step);
+}
+
+fn extraFlags(b: *std.Build, flags: []const []const u8, more: []const []const u8) []const []const u8 {
+    return std.mem.concat(b.allocator, []const u8, &.{ flags, more }) catch @panic("OOM");
+}
+
+fn getSource(b: *std.Build, base_path: []const u8) ![][]const u8 {
+    var sources = std.ArrayList([]const u8).init(b.allocator);
+    var dir = try std.fs.cwd().openDir(base_path, .{ .iterate = true });
+
+    var walker = try dir.walk(b.allocator);
+    defer walker.deinit();
+
+    const allowed_exts = [_][]const u8{ ".c", ".cpp", ".cxx", ".c++", ".cc" };
+    while (try walker.next()) |entry| {
+        const ext = std.fs.path.extension(entry.basename);
+        const include_file = for (allowed_exts) |e| {
+            if (std.mem.eql(u8, ext, e) and !std.mem.eql(u8, entry.path, "support/suffix_tree.h"))
+                break true;
+        } else false;
+        if (include_file) {
+            const path = try std.mem.concat(b.allocator, u8, &[_][]const u8{ base_path, entry.path });
+            // we have to clone the path as walker.next() or walker.deinit() will override/kill it
+            try sources.append(b.dupe(path));
+        }
+    }
+
+    return sources.toOwnedSlice();
 }

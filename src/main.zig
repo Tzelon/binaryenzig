@@ -1,19 +1,24 @@
 const std = @import("std");
+const binaryen = @import("./binaryen.zig");
+const Type = binaryen.Type;
 
 pub fn main() !void {
-    // Prints to stderr (it's a shortcut based on `std.io.getStdErr()`)
-    std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
+    const module = binaryen.Module.init();
+    defer module.deinit();
 
-    // stdout is for the actual output of your application, for example if you
-    // are implementing gzip, then only the compressed bytes should be sent to
-    // stdout, not any debugging messages.
-    const stdout_file = std.io.getStdOut().writer();
-    var bw = std.io.bufferedWriter(stdout_file);
-    const stdout = bw.writer();
+    var ii = [_]Type{ Type.int32(), Type.int32() };
+    const params = Type.create(ii[0..]);
+    const results = Type.int32();
 
-    try stdout.print("Run `zig build test` to run the tests.\n", .{});
+    const x = module.makeLocalGet(0, Type.int32());
+    const y = module.makeLocalGet(1, Type.int32());
 
-    try bw.flush(); // don't forget to flush!
+    const add = module.makeBinary(binaryen.addInt32(), x, y);
+
+    const adder = module.addFunction("adder", params, results, null, add);
+    _ = adder;
+
+    module.print();
 }
 
 test "simple test" {
